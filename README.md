@@ -66,3 +66,9 @@ $ cast --help
 ```
 
 # ShieldToken
+
+## Wallet UI
+
+Serve the `web/` directory on localhost (for example, `python -m http.server 4173 --directory web`) and open `http://localhost:4173/` in a browser with an injected Ethereum wallet installed. The wallet panel displays the active account and chain ID, follows account and network changes, and supports Ethereum Mainnet, Base, Polygon PoS, Arbitrum One, Optimism, BNB Smart Chain, Avalanche C-Chain, Sepolia, and local Anvil. Unsupported chains display a warning and offer a switch action.
+
+The Disconnect button clears the active wallet session in the page. Injected-wallet providers do not expose a universal dapp-initiated disconnect method.
