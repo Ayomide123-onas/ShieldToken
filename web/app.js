@@ -76,12 +76,15 @@ const supportedNetworks = [
 const elements = {
   account: document.querySelector("#account-value"),
   accountMeta: document.querySelector("#account-meta"),
+  balanceValue: document.querySelector("#balance-value"),
+  balanceMeta: document.querySelector("#balance-meta"),
   chainName: document.querySelector("#chain-name"),
   chainId: document.querySelector("#chain-id"),
   connectionPill: document.querySelector("#connection-pill"),
   connectionLabel: document.querySelector("#connection-label"),
   connectButton: document.querySelector("#connect-button"),
   disconnectButton: document.querySelector("#disconnect-button"),
+  refreshBalanceButton: document.querySelector("#refresh-balance-button"),
   notice: document.querySelector("#notice"),
   noticeMessage: document.querySelector("#notice-message"),
   noticeTitle: document.querySelector("#notice-title"),
@@ -91,7 +94,7 @@ const elements = {
   switchButton: document.querySelector("#switch-button"),
   switchPanel: document.querySelector("#switch-panel"),
   networkSelect: document.querySelector("#network-select"),
-  supportedChainIds: document.querySelector("#supported-chain-ids"),
+  supportedNetworks: document.querySelector("#supported-networks"),
 };
 
 let provider;
@@ -99,6 +102,10 @@ let account = null;
 let chainId = null;
 let errorMessage = "";
 let busy = false;
+let balanceLoading = false;
+let balanceValue = null;
+let balanceError = "";
+let balanceRequestId = 0;
 
 function networkFor(id) {
   return supportedNetworks.find((network) => network.chainId === id);
@@ -108,6 +115,18 @@ function shortAddress(address) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function formatUnits(value, decimals, precision = 6) {
+  const amount = BigInt(value);
+  const divisor = 10n ** BigInt(decimals);
+  const whole = amount / divisor;
+  const fraction = amount % divisor;
+  const fractionDigits = Math.min(decimals, precision);
+  const fractionDivisor = 10n ** BigInt(decimals - fractionDigits);
+  const formattedFraction = (fraction / fractionDivisor).toString().padStart(fractionDigits, "0").replace(/0+$/, "");
+  const groupedWhole = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return formattedFraction ? `${groupedWhole}.${formattedFraction}` : groupedWhole;
+}
+
 function populateNetworkOptions() {
   for (const network of supportedNetworks) {
     const option = document.createElement("option");
@@ -115,7 +134,15 @@ function populateNetworkOptions() {
     option.textContent = network.name;
     elements.networkSelect.append(option);
   }
-  elements.supportedChainIds.textContent = supportedNetworks.map((network) => network.chainId).join(" · ");
+  for (const network of supportedNetworks) {
+    const item = document.createElement("li");
+    const name = document.createElement("span");
+    const id = document.createElement("span");
+    name.textContent = network.name;
+    id.textContent = network.chainId;
+    item.append(name, id);
+    elements.supportedNetworks.append(item);
+  }
 }
 
 function render() {
@@ -134,6 +161,23 @@ function render() {
       ? "Switch to a supported network to continue"
       : "Account and network are monitored live";
 
+  elements.balanceValue.textContent = !connected
+    ? "--"
+    : balanceLoading
+      ? "Fetching balance..."
+      : balanceValue === null
+        ? "Unavailable"
+        : `${balanceValue} ${network?.nativeCurrency.symbol ?? "native"}`;
+  elements.balanceMeta.textContent = !connected
+    ? "Connect a wallet to fetch its balance"
+    : balanceError
+      ? balanceError
+      : balanceLoading
+        ? "Reading the latest wallet balance"
+        : balanceValue === null
+          ? "Refresh to try again"
+          : "Native coin balance on the active chain";
+
   elements.connectionPill.classList.toggle("is-connected", connected && !unsupported);
   elements.connectionPill.classList.toggle("is-unsupported", unsupported);
   elements.connectionLabel.textContent = unsupported ? "Unsupported network" : connected ? "Wallet connected" : "Not connected";
@@ -143,6 +187,8 @@ function render() {
   elements.disconnectButton.hidden = !connected;
   elements.connectButton.disabled = busy;
   elements.disconnectButton.disabled = busy;
+  elements.refreshBalanceButton.disabled = busy || balanceLoading || !connected;
+  elements.refreshBalanceButton.setAttribute("aria-busy", String(balanceLoading));
   elements.switchButton.disabled = busy;
   elements.switchPanel.hidden = !unsupported;
 
@@ -167,15 +213,61 @@ function clearError() {
 }
 
 async function refreshWallet() {
+  if (!provider || !account) return;
+  const requestId = ++balanceRequestId;
+  const requestProvider = provider;
+  const requestAccount = account;
+  const requestChainId = chainId;
+  balanceLoading = true;
+  balanceError = "";
+  render();
+  try {
+    const rawBalance = await requestProvider.request({
+      method: "eth_getBalance",
+      params: [requestAccount, "latest"],
+    });
+    if (requestId !== balanceRequestId || requestProvider !== provider || requestAccount !== account || requestChainId !== chainId) return;
+    const network = networkFor(requestChainId);
+    balanceValue = formatUnits(rawBalance, network?.nativeCurrency.decimals ?? 18);
+  } catch (error) {
+    if (requestId === balanceRequestId) {
+      balanceValue = null;
+      balanceError = error?.message || "Could not fetch balance";
+    }
+  } finally {
+    if (requestId === balanceRequestId) {
+      balanceLoading = false;
+      render();
+    }
+  }
+}
+
+async function refreshBalance() {
   if (!provider) return;
-  const [accounts, chainHex] = await Promise.all([
-    provider.request({ method: "eth_accounts" }),
-    provider.request({ method: "eth_chainId" }),
-  ]);
-  account = accounts[0] ?? null;
-  chainId = Number.parseInt(chainHex, 16);
+  busy = true;
   clearError();
   render();
+  try {
+    const [accounts, chainHex] = await Promise.all([
+      provider.request({ method: "eth_accounts" }),
+      provider.request({ method: "eth_chainId" }),
+    ]);
+    account = accounts[0] ?? null;
+    chainId = Number.parseInt(chainHex, 16);
+    if (!account) {
+      balanceRequestId++;
+      balanceValue = null;
+      balanceError = "No account is currently selected in the wallet";
+      balanceLoading = false;
+      return;
+    }
+    await refreshWallet();
+  } catch (error) {
+    balanceError = error?.message || "Could not refresh wallet balance";
+  } finally {
+    busy = false;
+    render();
+  }
 }
 
 function detachProvider() {
@@ -187,14 +279,24 @@ function detachProvider() {
 
 function handleAccountsChanged(accounts) {
   account = accounts[0] ?? null;
+  balanceRequestId++;
+  balanceValue = null;
+  balanceError = "";
+  balanceLoading = false;
   clearError();
   render();
+  if (account) refreshWallet();
 }
 
 function handleChainChanged(chainHex) {
   chainId = Number.parseInt(chainHex, 16);
+  balanceRequestId++;
+  balanceValue = null;
+  balanceError = "";
+  balanceLoading = false;
   clearError();
   render();
+  if (account) refreshWallet();
 }
 
 function handleProviderDisconnect() {
@@ -202,6 +304,10 @@ function handleProviderDisconnect() {
   provider = null;
   account = null;
   chainId = null;
+  balanceRequestId++;
+  balanceValue = null;
+  balanceError = "";
+  balanceLoading = false;
   clearError();
   render();
 }
@@ -229,6 +335,7 @@ async function connectWallet() {
     attachProvider(walletProvider);
     account = accounts[0] ?? null;
     chainId = Number.parseInt(await provider.request({ method: "eth_chainId" }), 16);
+    if (account) await refreshWallet();
     render();
   } catch (error) {
     showError(error);
@@ -243,6 +350,10 @@ function disconnectWallet() {
   provider = null;
   account = null;
   chainId = null;
+  balanceRequestId++;
+  balanceValue = null;
+  balanceError = "";
+  balanceLoading = false;
   clearError();
   render();
 }
@@ -284,6 +395,7 @@ async function switchNetwork() {
 
 elements.connectButton.addEventListener("click", connectWallet);
 elements.disconnectButton.addEventListener("click", disconnectWallet);
+elements.refreshBalanceButton.addEventListener("click", refreshBalance);
 elements.switchButton.addEventListener("click", switchNetwork);
 populateNetworkOptions();
 render();

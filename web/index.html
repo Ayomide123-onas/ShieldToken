@@ -59,6 +59,11 @@
               <div class="detail-value" id="chain-name">Not connected</div>
               <div class="detail-meta mono" id="chain-id">CHAIN ID / --</div>
             </article>
+            <article class="detail-block">
+              <div class="detail-label">NATIVE BALANCE</div>
+              <div class="detail-value" id="balance-value">--</div>
+              <div class="detail-meta" id="balance-meta">Connect a wallet to fetch its balance</div>
+            </article>
             <article class="detail-block state-block">
               <div class="detail-label">SESSION STATE</div>
               <div class="state-value"><span class="state-dot" id="state-dot"></span><span id="session-state">Awaiting wallet</span></div>
@@ -75,7 +80,22 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H4m8-7h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-6" /></svg>
               Disconnect
             </button>
+            <button class="button button-secondary" id="refresh-balance-button" type="button" disabled aria-busy="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M5.6 9A7 7 0 0 1 18 6l2 2M4 16l2 2a7 7 0 0 0 12.4-3" /></svg>
+              Refresh balance
+            </button>
           </div>
+
+          <section class="supported-section" aria-labelledby="supported-title">
+            <div class="supported-heading">
+              <div>
+                <div class="section-index">02 / NETWORKS</div>
+                <h2 id="supported-title">Supported chains</h2>
+              </div>
+              <span class="supported-note">EVM NETWORKS</span>
+            </div>
+            <ul class="supported-list" id="supported-networks" aria-label="Supported chains"></ul>
+          </section>
 
           <div class="switch-panel" id="switch-panel" hidden>
             <div class="switch-copy">
@@ -91,7 +111,7 @@
 
           <footer class="workspace-footer">
             <div><span class="footer-mark"></span> EIP-1193 INJECTED WALLET</div>
-            <div>SUPPORTED <span class="mono" id="supported-chain-ids"></span></div>
+            <div>LIVE ACCOUNT + CHAIN MONITORING</div>
           </footer>
         </section>
       </main>
